@@ -38,7 +38,6 @@ class PaddedMaskedVarLenConv(conv_layers.EncoderQConvolutionVarLen):
     assert bool(ngram is None) != bool(skip_bigram is None)
     self.kwidth = ngram if ngram is not None else (skip_bigram + 2)
     mask = [1] * self.kwidth
-    self.skipgram = skip_bigram is not None
     if skip_bigram is not None:
       mask[1], mask[skip_bigram] = 0, 0
     self.mask = np.array(mask, dtype="float32").reshape((1, self.kwidth, 1, 1))
@@ -57,10 +56,10 @@ class PaddedMaskedVarLenConv(conv_layers.EncoderQConvolutionVarLen):
       return result * mask + (1 - mask) * self.invalid_value
     return result
 
-  def quantize_parameter(self, weight, num_bits=8):
-    weight = super(PaddedMaskedVarLenConv, self).quantize_parameter(
-        weight, num_bits=num_bits)
-    return weight * tf.convert_to_tensor(self.mask) if self.skipgram else weight
+  def add_qweight(self, shape, num_bits=8):
+    weight = super(PaddedMaskedVarLenConv, self).add_qweight(
+        shape=shape, num_bits=num_bits)
+    return weight * tf.convert_to_tensor(self.mask)
 
 
 class AttentionPoolReduce(base_layers.BaseLayer):
