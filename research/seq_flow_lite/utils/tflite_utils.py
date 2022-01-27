@@ -31,8 +31,8 @@ def _dump_graph_in_text_format(filename, graph_def):
 class InterpreterWithCustomOps(tf.lite.Interpreter):
   """Extended tf.lite.Interpreter."""
 
-  def __init__(self, model_content, custom_op_registerers=None):
-    self._custom_op_registerers = custom_op_registerers or []
+  def __init__(self, model_content, custom_op_registerers):
+    self._custom_op_registerers = custom_op_registerers
     super(InterpreterWithCustomOps, self).__init__(model_content=model_content)
 
   def op_details(self):
@@ -53,23 +53,6 @@ class InterpreterWithCustomOps(tf.lite.Interpreter):
         op_hist[op['op_name']] = 1
     return op_hist
 
-  def check_op_histogram(self, expected):
-    passed = True
-    for k, v in self.op_histogram().items():
-      if k not in expected:
-        print('Unexpected key {} found {} times.'.format(k, v))
-        passed = False
-        continue
-      elif expected[k] != v:
-        print('Expected {} counts of key {} found {}.'.format(
-            expected[k], k, v))
-        passed = False
-      del expected[k]
-    for k, v in expected.items():
-      print('Missing expected key {} value {}.'.format(k, v))
-      passed = False
-    return passed
-
 
 def set_output_quantized_for_custom_ops(graph_def, use_mlir=True):
   """Set output types/quantized flag for custom/unsupported ops."""
@@ -80,8 +63,6 @@ def set_output_quantized_for_custom_ops(graph_def, use_mlir=True):
       'ExpectedValueOp': [tf.float32.as_datatype_enum],
       'LayerNorm': [tf.float32.as_datatype_enum],
       'UniformCausalAttn': [tf.float32.as_datatype_enum],
-      'RnnDecoderReadState': [tf.float32.as_datatype_enum],
-      'RnnDecoderWriteState': [tf.float32.as_datatype_enum],
   }
   custom_op_renames = {
       'SequenceStringProjection': 'SEQUENCE_STRING_PROJECTION',
@@ -111,6 +92,16 @@ def generate_tflite(session,
 
   set_output_quantized_for_custom_ops(graph_def, use_mlir)
 
+  # TODO(b/171063452): Bug needs to be fixed to handle this correctly.
+  #   def _node_name(tensor):
+  #     return tensor.name.split(':')[0]
+
+  #   input_arrays_with_shape = [
+  #       (_node_name(tensor), None) for tensor in input_tensors
+  #   ]
+  #   output_arrays = [_node_name(tensor) for tensor in output_tensors]
+  #   converter = tf.lite.TFLiteConverter(graph_def, None, None,
+  #                                      input_arrays_with_shape, output_arrays)
   converter = tf.lite.TFLiteConverter(graph_def, input_tensors, output_tensors)
   converter.inference_type = tf.uint8
   converter.default_ranges_stats = (127.5, 127.5)

@@ -163,7 +163,7 @@ class ProjectionParams {
     DocSizeFeature(&doc_size_feature, num_tokens);
     *data = PodQuantize(doc_size_feature, 127.0f, 127);
   }
-  void Hash(const std::string& word, std::vector<uint64_t>& hash_codes) {
+  void Hash(const std::string& word, std::vector<uint64_t>* hash_codes) {
     hasher_->GetHashCodes(word, hash_codes);
   }
   // Lower cases the input text and eliminates all unsupported
@@ -414,7 +414,7 @@ void TypedEval(const T* mapping_table, ProjectionParams* params, T* data) {
     } else {
       word = kEndToken;
     }
-    params->Hash(word, hash_codes);
+    params->Hash(word, &hash_codes);
     for (int hindex = 0, k = 0; hindex < hash_codes.size(); hindex++) {
       auto hash = hash_codes[hindex];
       for (int kmax = std::min(k + kIncrement, params->FeatureSize());

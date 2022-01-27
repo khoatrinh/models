@@ -54,8 +54,8 @@ class BaseLayer(tf.keras.layers.Layer):
     assert len(tensor.get_shape().as_list()) == rank
     assert tensor.dtype == dtype
 
-  def add_weight_wrapper(self, shape):
-    """Return a weight variable for the given shape."""
+  def add_qweight(self, shape, num_bits=8):
+    """Return a quantized weight variable for the given shape."""
     if self.parameters.initializer is not None:
       initializer = self.parameters.initializer
     else:
@@ -67,10 +67,10 @@ class BaseLayer(tf.keras.layers.Layer):
         trainable=True,
         dtype=tf.float32)
     self.add_reg_loss(weight)
-    return weight
+    return self._weight_quantization(weight, num_bits=num_bits)
 
-  def quantize_parameter(self, tensor, num_bits=8):
-    """Quantize parameters when enabled."""
+  def _weight_quantization(self, tensor, num_bits=8):
+    """Quantize weights when enabled."""
     # For infer mode, toco computes the min/max from the weights offline to
     # quantize it. During train/eval this is computed from the current value
     # in the session by the graph itself.
@@ -128,11 +128,3 @@ class BaseLayer(tf.keras.layers.Layer):
 
   def inverse_normalizer(self, mask):
     return tf.math.reciprocal(tf.reduce_sum(mask))
-
-  def random_drop_to_zero(self, tensor, zero_probability):
-    rnd = tf.random.uniform(
-        shape=tf.shape(tensor),
-        minval=-zero_probability,
-        maxval=(1.0 - zero_probability),
-        dtype=tensor.dtype)
-    return tf.math.ceil(rnd)

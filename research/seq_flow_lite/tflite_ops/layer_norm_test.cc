@@ -33,22 +33,33 @@ using ::tflite::TensorType_UINT8;
 
 class LayerNormModel : public ::tflite::SingleOpModel {
  public:
-  explicit LayerNormModel(std::initializer_list<int> input_shape,
-                          float input_min, float input_max, float output_min,
+  explicit LayerNormModel(const ::tflite::TensorData& input, float output_min,
                           float output_max, float scale, float offset,
-                          std::initializer_list<int> axes)
+                          std::initializer_list<int> axis_shape,
+                          std::initializer_list<int> axis)
       : scale_value_(scale), offset_value_(offset) {
-    const int num_axes = axes.size();
-    input_ = AddInput({TensorType_UINT8, input_shape, input_min, input_max});
+    input_ = AddInput(input);
     scale_ = AddInput(
         {TensorType_UINT8, {1}, std::min(scale, 0.0f), std::max(scale, 0.0f)});
     offset_ = AddInput({TensorType_UINT8,
                         {1},
                         std::min(offset, 0.0f),
                         std::max(offset, 0.0f)});
-    axis_ = AddConstInput(TensorType_INT32, axes, {num_axes});
+    axis_ = AddConstInput(TensorType_INT32, axis, axis_shape);
     output_ = AddOutput({TensorType_UINT8, {}, output_min, output_max});
-    SetCustomOp("LayerNorm", {}, Register_LAYER_NORM);
+    flexbuffers::Builder fbb;
+    fbb.Map([&] {
+      {
+        size_t start = fbb.StartVector("axes");
+        for (const int& aval : axis) {
+          fbb.Int(aval);
+        }
+        fbb.EndVector(start, /*typed=*/true, /*fixed=*/false);
+      }
+    });
+    fbb.Finish();
+
+    SetCustomOp("LayerNorm", fbb.GetBuffer(), Register_LAYER_NORM);
     BuildInterpreter({GetShape(input_)});
   }
 
@@ -83,9 +94,8 @@ TEST(LayerNormModelTest, RegularInput) {
   const std::vector<float> expected_output = {0.0, -1.6,  0.53, 1.07,
                                               0.0, -1.13, 1.59, -0.45};
 
-  LayerNormModel m(/*input_shape=*/{1, 2, 4}, /*input_min=*/-10,
-                   /*input_max=*/10, /*output_min=*/-10, /*output_max=*/10,
-                   /*scale=*/1.0, /*offset=*/0.0, /*axes=*/{2});
+  LayerNormModel m({TensorType_UINT8, {1, 2, 4}, -10, 10}, -10, 10, 1.0, 0.0,
+                   {1}, {2});
   m.SetInput(input);
   m.Invoke();
   EXPECT_THAT(
@@ -102,9 +112,8 @@ TEST(LayerNormModelTest, NegativeScale) {
   // Standard deviation values are 3.74, 4.41
   const std::vector<float> expected_output = {0.0, 1.6,  -0.53, -1.07,
                                               0.0, 1.13, -1.59, 0.45};
-  LayerNormModel m(/*input_shape=*/{1, 2, 4}, /*input_min=*/-10,
-                   /*input_max=*/10, /*output_min=*/-10, /*output_max=*/10,
-                   /*scale=*/-1.0, /*offset=*/0.0, /*axes=*/{2});
+  LayerNormModel m({TensorType_UINT8, {1, 2, 4}, -10, 10}, -10, 10, -1.0, 0.0,
+                   {1}, {2});
   m.SetInput(input);
   m.Invoke();
   EXPECT_THAT(
@@ -121,9 +130,8 @@ TEST(LayerNormModelTest, NegativeOffset) {
   // Standard deviation values are 3.74, 4.41
   const std::vector<float> expected_output = {-1.0, -2.6,  -0.53, 0.07,
                                               -1.0, -2.13, 0.59,  -1.45};
-  LayerNormModel m(/*input_shape=*/{1, 2, 4}, /*input_min=*/-10,
-                   /*input_max=*/10, /*output_min=*/-10, /*output_max=*/10,
-                   /*scale=*/1.0, /*offset=*/-1.0, /*axes=*/{2});
+  LayerNormModel m({TensorType_UINT8, {1, 2, 4}, -10, 10}, -10, 10, 1.0, -1.0,
+                   {1}, {2});
   m.SetInput(input);
   m.Invoke();
   EXPECT_THAT(
@@ -140,9 +148,8 @@ TEST(LayerNormModelTest, NegativeScaleAndOffset) {
   // Standard deviation values are 3.74, 4.41
   const std::vector<float> expected_output = {-1.0, 0.6,  -1.53, -2.07,
                                               -1.0, 0.13, -2.59, -0.55};
-  LayerNormModel m(/*input_shape=*/{1, 2, 4}, /*input_min=*/-10,
-                   /*input_max=*/10, /*output_min=*/-10, /*output_max=*/10,
-                   /*scale=*/-1.0, /*offset=*/-1.0, /*axes=*/{2});
+  LayerNormModel m({TensorType_UINT8, {1, 2, 4}, -10, 10}, -10, 10, -1.0, -1.0,
+                   {1}, {2});
   m.SetInput(input);
   m.Invoke();
   EXPECT_THAT(
@@ -159,9 +166,8 @@ TEST(LayerNormModelTest, MultipleAxis) {
       1.12,  -2.08, 0.48,  -0.16, -0.95, -1.46, -0.95, 0.06,
       -0.69, -0.23, -1.60, -1.15, -0.80, -0.16, 0.48,  1.12};
 
-  LayerNormModel m(/*input_shape=*/{1, 2, 3, 4}, /*input_min=*/-3,
-                   /*input_max=*/3, /*output_min=*/-3, /*output_max=*/3,
-                   /*scale=*/1.0, /*offset=*/0.0, /*axes=*/{1, 3});
+  LayerNormModel m({TensorType_UINT8, {1, 2, 3, 4}, -3, 3}, -3, 3, 1.0, 0.0,
+                   {2}, {1, 3});
   m.SetInput(input);
   m.Invoke();
   EXPECT_THAT(
@@ -178,9 +184,8 @@ TEST(LayerNormModelTest, MultipleNegativeAxis) {
       1.12,  -2.08, 0.48,  -0.16, -0.95, -1.46, -0.95, 0.06,
       -0.69, -0.23, -1.60, -1.15, -0.80, -0.16, 0.48,  1.12};
 
-  LayerNormModel m(/*input_shape=*/{1, 2, 3, 4}, /*input_min=*/-3,
-                   /*input_max=*/3, /*output_min=*/-3, /*output_max=*/3,
-                   /*scale=*/1.0, /*offset=*/0.0, /*axes=*/{-3, -1});
+  LayerNormModel m({TensorType_UINT8, {1, 2, 3, 4}, -3, 3}, -3, 3, 1.0, 0.0,
+                   {2}, {-3, -1});
   m.SetInput(input);
   m.Invoke();
   EXPECT_THAT(
@@ -200,9 +205,8 @@ TEST(LayerNormModelTest, MultipleAxisWithLargeDepth) {
       2.05,  2.05,  -0.67, -0.28, 1.27,  1.27,  -1.06, -1.06, -0.28,
       0.,    -0.85, -0.42, 0.,    0.42,  -0.85, -0.42, 0.,    0.42};
 
-  LayerNormModel m(/*input_shape=*/{1, 2, 2, 9}, /*input_min=*/-1.0,
-                   /*input_max=*/1.0, /*output_min=*/-3.0, /*output_max=*/3.0,
-                   /*scale=*/1.0, /*offset=*/0.0, /*axes=*/{1, 3});
+  LayerNormModel m({TensorType_UINT8, {1, 2, 2, 9}, -1.0, 1.0}, -3.0, 3.0, 1.0,
+                   0.0, {2}, {1, 3});
   m.SetInput(input);
   m.Invoke();
   EXPECT_THAT(

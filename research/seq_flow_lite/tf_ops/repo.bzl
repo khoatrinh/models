@@ -198,7 +198,7 @@ cc_library(
     ),
     includes = ["tensorflow_includes"],
     deps = [
-        "@eigen_archive//:eigen3",
+        "@eigen_archive//:eigen",
         "@protobuf_archive//:includes",
         "@zlib_includes//:includes",
         "@snappy_includes//:includes",
